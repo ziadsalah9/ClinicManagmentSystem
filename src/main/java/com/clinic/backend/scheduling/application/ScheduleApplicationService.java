@@ -321,7 +321,8 @@ public class ScheduleApplicationService {
                     mapRules(input.weeklyRules()));
         } catch (NullPointerException | IllegalArgumentException exception) {
             throw new SchedulingException(ScheduleError.INVALID_INPUT,
-                    "Invalid shift configuration: " + exception.getMessage());
+                    "The shift configuration is invalid: "
+                            + domainMessage(exception, "check the capacity mode and weekly rules"));
         }
     }
 
@@ -332,7 +333,8 @@ public class ScheduleApplicationService {
                     mapRules(input.weeklyRules()));
         } catch (NullPointerException | IllegalArgumentException exception) {
             throw new SchedulingException(ScheduleError.INVALID_INPUT,
-                    "Invalid shift configuration: " + exception.getMessage());
+                    "The shift configuration is invalid: "
+                            + domainMessage(exception, "check the capacity mode and weekly rules"));
         }
     }
 
@@ -352,7 +354,8 @@ public class ScheduleApplicationService {
             }).toList();
         } catch (NullPointerException | IllegalArgumentException exception) {
             throw new SchedulingException(ScheduleError.INVALID_INPUT,
-                    "Invalid shift configuration: " + exception.getMessage());
+                    "The weekly rules are invalid: "
+                            + domainMessage(exception, "check the working hours and breaks"));
         }
     }
 
@@ -439,7 +442,13 @@ public class ScheduleApplicationService {
                     input.dateFrom(), input.dateTo(), changed, input.reason());
         } catch (NullPointerException | IllegalArgumentException exception) {
             throw new SchedulingException(ScheduleError.INVALID_INPUT,
-                    "Invalid schedule exception: " + exception.getMessage());
+                    "The schedule exception is invalid: "
+                            + domainMessage(exception, "check the exception type, dates, and working hours"));
         }
+    }
+
+    private static String domainMessage(Exception exception, String fallback) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank() ? fallback : message.trim();
     }
 }

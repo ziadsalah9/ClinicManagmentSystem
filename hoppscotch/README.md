@@ -45,7 +45,7 @@ Run the **06 - Scheduling** folder with the owner token (or any clinic member wi
 2. **Create Sunday shift** creates a calculated-capacity shift. If it already exists, the request reports `409` and you can continue with the listed shift.
 3. **Preview capacity** and **Preview shift change** are read-only checks.
 4. **Update shift** and **Activate shift** require the current `shiftVersion`; reload on `409 STALE_VERSION`.
-5. **List exceptions**, **Create day-off exception**, and **Cancel exception** exercise exception reconciliation.
+5. **List exceptions**, **Create day-off exception**, **Create changed-hours exception**, and **Cancel exception** exercise exception reconciliation.
 6. **Generate sessions** and **List sessions** use the 60-day horizon (`scheduleFrom`/`scheduleTo`).
 
 The API base path is `/api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedule`. Session generation is idempotent and preserves booked sessions. Updating an active shift returns `409 BOOKING_CONFLICT` if the change would invalidate existing bookings.
@@ -75,4 +75,4 @@ Verification extras: `clinicStatusFilter`, `verificationAction`, `verificationRe
 - Requires Flyway V9 applied for scheduling and Booking-generated sessions. V9 is additive; existing migrations must remain untouched.
 - 403 `PASSWORD_CHANGE_REQUIRED`: call `POST /api/v1/auth/password/change`.
 - Verification errors: `400 VERIFICATION_REASON_REQUIRED`, `409 INVALID_STATUS_TRANSITION`, `409 STALE_VERSION`.
-- Scheduling errors: `400 INVALID_INPUT`/`INVALID_DATE_RANGE`, `403 ACCESS_DENIED`, `404 DOCTOR_CLINIC_NOT_FOUND`/`SHIFT_NOT_FOUND`/`EXCEPTION_NOT_FOUND`, `409 STALE_VERSION`/`SHIFT_NAME_CONFLICT`/`SHIFT_CONFLICT`/`BOOKING_CONFLICT`.
+- Scheduling errors: `400 INVALID_INPUT`/`INVALID_DATE_RANGE`/`VALIDATION_FAILED`/`INVALID_REQUEST_BODY`/`INVALID_PARAMETER`/`MISSING_PARAMETER`, `403 ACCESS_DENIED`, `404 DOCTOR_CLINIC_NOT_FOUND`/`SHIFT_NOT_FOUND`/`EXCEPTION_NOT_FOUND`, `409 STALE_VERSION`/`SHIFT_NAME_CONFLICT`/`SHIFT_CONFLICT`/`BOOKING_CONFLICT`/`CONCURRENT_MODIFICATION`/`SCHEDULE_DATA_CONFLICT`. Responses include `title`, `detail`, `code`, `retryable`, and `errors[]` for validation failures.

@@ -22,13 +22,16 @@ final class ScheduleApiModels {
     private ScheduleApiModels() { }
 
     record ShiftRequest(
-            @NotBlank @Size(max = 100) String name,
-            @NotNull CapacityMode capacityMode,
-            @Min(3) @Max(60) Integer averageVisitMinutes,
-            @Min(1) Integer fixedCapacity,
-            @NotNull LocalDate effectiveFrom,
-            @NotEmpty @Valid List<WeeklyRuleRequest> weeklyRules,
-            @PositiveOrZero Long expectedVersion
+            @NotBlank(message = "Shift name is required")
+            @Size(max = 100, message = "Shift name must be at most 100 characters") String name,
+            @NotNull(message = "Capacity mode is required (CALCULATED or FIXED)") CapacityMode capacityMode,
+            @Min(value = 3, message = "Average visit minutes must be between 3 and 60")
+            @Max(value = 60, message = "Average visit minutes must be between 3 and 60") Integer averageVisitMinutes,
+            @Min(value = 1, message = "Fixed capacity must be at least 1") Integer fixedCapacity,
+            @NotNull(message = "Effective from date is required") LocalDate effectiveFrom,
+            @NotEmpty(message = "At least one weekly rule is required")
+            @Valid List<WeeklyRuleRequest> weeklyRules,
+            @PositiveOrZero(message = "Expected version must be zero or greater") Long expectedVersion
     ) {
         ScheduleInputs.ShiftInput toInput() {
             return new ScheduleInputs.ShiftInput(name, capacityMode, averageVisitMinutes,
@@ -38,10 +41,10 @@ final class ScheduleApiModels {
     }
 
     record WeeklyRuleRequest(
-            @NotNull DayOfWeek dayOfWeek,
-            @NotNull LocalTime startTime,
-            @NotNull LocalTime endTime,
-            @Min(0) int followUpQuota,
+            @NotNull(message = "Day of week is required") DayOfWeek dayOfWeek,
+            @NotNull(message = "Weekly rule start time is required") LocalTime startTime,
+            @NotNull(message = "Weekly rule end time is required") LocalTime endTime,
+            @Min(value = 0, message = "Follow-up quota cannot be negative") int followUpQuota,
             @Valid List<BreakRequest> breaks
     ) {
         ScheduleInputs.WeeklyRuleInput toInput() {
@@ -51,8 +54,8 @@ final class ScheduleApiModels {
     }
 
     record BreakRequest(
-            @NotNull LocalTime startTime,
-            @NotNull LocalTime endTime
+            @NotNull(message = "Break start time is required") LocalTime startTime,
+            @NotNull(message = "Break end time is required") LocalTime endTime
     ) {
         ScheduleInputs.BreakInput toInput() {
             return new ScheduleInputs.BreakInput(startTime, endTime);
@@ -60,8 +63,9 @@ final class ScheduleApiModels {
     }
 
     record ActivationRequest(
-            @NotNull Boolean active,
-            @NotNull @PositiveOrZero Long expectedVersion
+            @NotNull(message = "Active flag is required") Boolean active,
+            @NotNull(message = "Expected version is required")
+            @PositiveOrZero(message = "Expected version must be zero or greater") Long expectedVersion
     ) {
         ScheduleInputs.ActivationInput toInput() {
             return new ScheduleInputs.ActivationInput(active, expectedVersion);
@@ -70,12 +74,13 @@ final class ScheduleApiModels {
 
     record ExceptionRequest(
             UUID shiftId,
-            @NotNull ScheduleExceptionType type,
-            @NotNull LocalDate dateFrom,
-            @NotNull LocalDate dateTo,
+            @NotNull(message = "Exception type is required (DAY_OFF or CHANGED_HOURS)")
+            ScheduleExceptionType type,
+            @NotNull(message = "Exception start date is required") LocalDate dateFrom,
+            @NotNull(message = "Exception end date is required") LocalDate dateTo,
             LocalTime startTime,
             LocalTime endTime,
-            @Size(max = 500) String reason
+            @Size(max = 500, message = "Exception reason must be at most 500 characters") String reason
     ) {
         ScheduleInputs.ExceptionInput toInput() {
             return new ScheduleInputs.ExceptionInput(shiftId, type, dateFrom, dateTo,

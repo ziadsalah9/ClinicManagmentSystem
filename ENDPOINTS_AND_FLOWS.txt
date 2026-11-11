@@ -50,7 +50,7 @@ C1. Direct provision (admin/owner provisions full doctor profile immediately)
 C2. Invite + claim (LIGHTWEIGHT invite; doctor completes profile after claim)
 1. Admin/owner calls POST /api/v1/admin/doctors/invite (or POST /api/v1/owners/doctors/invite) with ONLY: {phone, fullName, email?, clinicId}. No professional title/bio/experience/syndicate/gender/specialtyIds at invite time.
 2. System validates clinicId is present and clinic exists via ClinicFacade.existsById(clinicId). If actor is OWNER, system enforces ClinicFacade.isOwnedBy(clinicId, actorUserId) (IDOR prevention). Identity creates a hashed single-use onboarding invite with expiry and per-phone rate limiting; invite payload is lightweight (contact + clinicId only).
-3. If email is provided, the raw claim token + onboarding link are emailed asynchronously after the invite transaction commits (Gmail SMTP via EmailService). If email is omitted, the existing phone delivery adapter is used. Email failures are logged without failing/rolling back the invite transaction. Never log raw tokens (local console fallback only, and only when email is omitted).
+3. If email is provided, the raw claim token is emailed asynchronously after the invite transaction commits (Gmail SMTP via EmailService). The email has no onboarding button or tokenized link; it highlights the token for the doctor to copy into the claim page. If email is omitted, the existing phone delivery adapter is used. Email failures are logged without failing/rolling back the invite transaction. Never log raw tokens (local console fallback only, and only when email is omitted).
 4. Doctor calls POST /api/v1/auth/doctors/claim (public, permitAll) with {token, password, locale?, deviceId?}.
 5. System verifies token (hashed, expiry, attempt limits), creates identity user + DOCTOR membership for the invited clinicId, marks invite claimed, and issues tokens. Claim is identity/provisioning-orchestrated and does NOT create a full doctor profile from invite payload (invite is lightweight).
 6. Doctor completes full professional profile after claim: POST /api/v1/doctors/me (authenticated doctor token) with professionalTitle/bio/yearsExperience/syndicateNumber/gender/specialtyIds. Use GET /api/v1/specialties to select valid specialtyIds.
@@ -178,7 +178,7 @@ POST /api/v1/admin/doctors/direct  [ROLE_ADMIN or ROLE_OWNER]
 POST /api/v1/admin/doctors/invite  [ROLE_ADMIN or ROLE_OWNER]
 POST /api/v1/owners/doctors/invite  [ROLE_ADMIN or ROLE_OWNER]
   What: SMART lightweight doctor invitation. Mandatory clinicId; validates existence via ClinicFacade.existsById; OWNER actor must own clinic (IDOR prevention).
-    - New phone: creates hashed single-use claim invite with expiry/rate limiting and (when email is supplied) emails the claim link/token asynchronously after commit.
+    - New phone: creates hashed single-use claim invite with expiry/rate limiting and (when email is supplied) emails the copyable claim token asynchronously after commit; no action button/tokenized link.
     - Existing user: no new account/token; links the user to clinicId with an ACTIVE DOCTOR StaffMembership. If they are already a member of that clinic -> 409 ALREADY_MEMBER.
   Body: InviteDoctorRequest {phone(E.164), fullName, email?, clinicId(UUID, required)}. Use email to receive the claim token by Gmail SMTP.
   Returns 201: {status:"INVITED", inviteId, phone, expiresAt, user:null, membership:null, message}
@@ -250,7 +250,8 @@ POST /shifts/{shiftId}/previews/change
 
 GET  /exceptions
 POST /exceptions
-  Body: {shiftId?, type(DAY_OFF|DATE_RANGE|TIME_RANGE), dateFrom, dateTo?, startTime?, endTime?, reason}.
+  Body: {shiftId?, type(DAY_OFF|CHANGED_HOURS), dateFrom, dateTo, startTime?, endTime?, reason?}.
+  DAY_OFF must omit startTime/endTime. CHANGED_HOURS requires both startTime and endTime; they replace the normal shift hours for that date range.
 DELETE /exceptions/{exceptionId}
   Cancel exception; body {expectedVersion?}. Affected sessions are reconciled in the 60-day horizon.
 
@@ -259,7 +260,11 @@ POST /sessions/generate
 GET  /sessions?from=YYYY-MM-DD&to=YYYY-MM-DD
   List generated sessions in the requested clinic-local date range.
 
-Errors: 400 INVALID_INPUT/INVALID_DATE_RANGE, 403 ACCESS_DENIED, 404 DOCTOR_CLINIC_NOT_FOUND/SHIFT_NOT_FOUND/EXCEPTION_NOT_FOUND, 409 STALE_VERSION/SHIFT_NAME_CONFLICT/SHIFT_CONFLICT/BOOKING_CONFLICT.
+Errors return RFC 7807 ProblemDetail with title, detail, code and retryable:
+- 400 INVALID_INPUT/INVALID_DATE_RANGE/VALIDATION_FAILED/INVALID_REQUEST_BODY/INVALID_PARAMETER/MISSING_PARAMETER.
+- 403 ACCESS_DENIED. 404 DOCTOR_CLINIC_NOT_FOUND/SHIFT_NOT_FOUND/EXCEPTION_NOT_FOUND.
+- 409 STALE_VERSION/SHIFT_NAME_CONFLICT/SHIFT_CONFLICT/BOOKING_CONFLICT/CONCURRENT_MODIFICATION/SCHEDULE_DATA_CONFLICT.
+Validation responses also include an errors array with field/message entries; malformed enum values list the allowed values.
 
 Scheduled reconciliation: SessionHorizonJob uses pg_try_advisory_lock(hashtextextended(doctorClinicId, 0)) on a dedicated connection; concurrent runs skip. Booking owns booking_session and uniqueness is (doctor_clinic_id, shift_id, session_date).
 

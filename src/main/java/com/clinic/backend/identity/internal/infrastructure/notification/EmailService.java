@@ -11,7 +11,6 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
@@ -47,21 +46,17 @@ public class EmailService implements DoctorInvitationEmailPort {
     @Async("emailTaskExecutor")
     public void sendDoctorInvitation(String toEmail, String doctorName, String clinicName, String claimToken) {
         try {
-            String claimUrl = UriComponentsBuilder.fromUriString(claimPageUrl)
-                    .queryParam("token", claimToken)
-                    .build()
-                    .encode()
-                    .toUriString();
-            warnIfClaimUrlIsNotPublic(claimUrl);
+            warnIfClaimUrlIsNotPublic(claimPageUrl);
             String safeDoctorName = HtmlUtils.htmlEscape(safe(doctorName, "Doctor"));
             String safeClinicName = HtmlUtils.htmlEscape(safe(clinicName, "the clinic"));
 
             String plainText = "Hello " + safe(doctorName, "Doctor") + ",\n\n"
                     + "You have been invited to join " + safe(clinicName, "the clinic") + " as a doctor.\n\n"
-                    + "Complete your onboarding using this link:\n" + claimUrl + "\n\n"
-                    + "If the link does not open, use this claim token:\n" + claimToken + "\n\n"
+                    + "Copy this claim token to complete your onboarding:\n" + claimToken + "\n\n"
+                    + "Open the doctor claim page and paste the token:\n" + claimPageUrl + "\n\n"
                     + "This email was sent because this address was added to a doctor invitation for "
-                    + safe(clinicName, "the clinic") + ". If you were not expecting it, ignore this email.\n";
+                    + safe(clinicName, "the clinic") + ". If you were not expecting it, ignore this email.\n"
+                    + "For security, do not share this token with anyone.\n";
 
             String html = """
                     <!doctype html>
@@ -80,26 +75,24 @@ public class EmailService implements DoctorInvitationEmailPort {
                               <tr>
                                 <td style="padding:32px;">
                                   <p style="margin:0 0 16px;font-size:16px;">Hello %s,</p>
-                                  <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">
+                                  <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">
                                     You have been invited to join <strong>%s</strong> as a doctor.
-                                    Complete your onboarding by setting your password and building your professional profile.
+                                    Copy your claim token below, then paste it on the doctor claim page to set your password
+                                    and build your professional profile.
                                   </p>
-                                  <p style="margin:24px 0;text-align:center;">
-                                    <a href="%s" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;font-size:16px;">Complete onboarding</a>
-                                  </p>
-                                  <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">If the button does not work, open this link:</p>
-                                  <p style="margin:0 0 20px;font-size:12px;word-break:break-all;color:#0f766e;">%s</p>
-                                  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">
-                                    <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">Or enter this claim token in the app:</p>
-                                    <p style="margin:0;font-size:14px;font-family:Consolas,monospace;word-break:break-all;">%s</p>
+                                  <div style="background:#ecfdf5;border:2px solid #0f766e;border-radius:10px;padding:20px;text-align:center;">
+                                    <p style="margin:0 0 8px;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;">Your claim token</p>
+                                    <p style="margin:0;font-size:20px;line-height:1.5;font-family:Consolas,monospace;font-weight:bold;word-break:break-all;user-select:all;-webkit-user-select:all;">%s</p>
                                   </div>
+                                  <p style="margin:24px 0 8px;font-size:14px;line-height:1.6;">Open the doctor claim page and paste the token:</p>
+                                  <p style="margin:0;font-size:13px;line-height:1.6;word-break:break-all;color:#0f766e;">%s</p>
                                 </td>
                               </tr>
                               <tr>
                                 <td style="padding:20px 32px;background:#f9fafb;color:#6b7280;font-size:12px;line-height:1.5;">
                                   This email was sent because this address was added to a doctor invitation for %s.
                                   If you were not expecting it, you can safely ignore this email.
-                                  For security, do not share this link or token with anyone.
+                                  For security, do not share this token with anyone.
                                 </td>
                               </tr>
                             </table>
@@ -109,8 +102,7 @@ public class EmailService implements DoctorInvitationEmailPort {
                     </body>
                     </html>
                     """.formatted(safeDoctorName, safeClinicName,
-                    HtmlUtils.htmlEscape(claimUrl), HtmlUtils.htmlEscape(claimUrl), HtmlUtils.htmlEscape(claimToken),
-                    safeClinicName);
+                    HtmlUtils.htmlEscape(claimToken), HtmlUtils.htmlEscape(claimPageUrl), safeClinicName);
 
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());

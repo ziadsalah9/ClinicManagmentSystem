@@ -43,6 +43,7 @@ The Hoppscotch request "Get all doctors in clinic" stores it as doctorClinicId.
    - Scheduling: activate shift
    - Scheduling: list exceptions
    - Scheduling: create day-off exception
+   - Scheduling: create changed-hours exception
    - Scheduling: cancel exception
    - Scheduling: generate sessions
    - Scheduling: list sessions
@@ -122,9 +123,10 @@ POST /exceptions
     "endTime": null,
     "reason": "Public holiday"
   }
-  type: DAY_OFF, DATE_RANGE, or TIME_RANGE.
+  type: DAY_OFF or CHANGED_HOURS.
   dateFrom and dateTo are required. shiftId null applies to all shifts.
-  TIME_RANGE requires startTime/endTime. Returns ExceptionView.
+  DAY_OFF must omit startTime/endTime. CHANGED_HOURS requires both and replaces
+  the normal shift hours for the date range. Returns ExceptionView.
 
 DELETE /exceptions/{exceptionId}
   Cancel an exception. Body: { "expectedVersion": 0 }
@@ -162,10 +164,16 @@ SessionView:
 --------------------------------------------------------------------------------
 6. ERRORS
 --------------------------------------------------------------------------------
-400 INVALID_INPUT / INVALID_DATE_RANGE
+400 INVALID_INPUT / INVALID_DATE_RANGE / VALIDATION_FAILED /
+    INVALID_REQUEST_BODY / INVALID_PARAMETER / MISSING_PARAMETER
 403 ACCESS_DENIED or PASSWORD_CHANGE_REQUIRED
 404 DOCTOR_CLINIC_NOT_FOUND / SHIFT_NOT_FOUND / EXCEPTION_NOT_FOUND
-409 STALE_VERSION / SHIFT_NAME_CONFLICT / SHIFT_CONFLICT / BOOKING_CONFLICT
+409 STALE_VERSION / SHIFT_NAME_CONFLICT / SHIFT_CONFLICT / BOOKING_CONFLICT /
+    CONCURRENT_MODIFICATION / SCHEDULE_DATA_CONFLICT
+
+All responses are RFC 7807 ProblemDetail with title, detail, code and retryable.
+Validation responses include an errors array with field/message entries. Invalid
+enum values report the allowed values (for example DAY_OFF, CHANGED_HOURS).
 
 Optimistic locking is used for shift, exception and session updates. Never ignore
 409 STALE_VERSION; reload the resource and retry with the current version.

@@ -1,5 +1,7 @@
 package com.clinic.backend.identity.internal.infrastructure.notification;
 
+import jakarta.mail.Multipart;
+import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
@@ -36,5 +38,23 @@ class EmailServiceTest {
         assertThat(message.getSubject()).isEqualTo("Invitation to join Smile Clinic");
         assertThat(message.getHeader("Auto-Submitted", null)).isEqualTo("auto-generated");
         assertThat(message.getHeader("X-Auto-Response-Suppress", null)).isEqualTo("OOF, AutoReply");
+
+        StringBuilder body = new StringBuilder();
+        collectContent(message, body);
+
+        assertThat(body.toString())
+                .contains("token-123", "Your claim token", "https://app.clinic.example/doctor/claim")
+                .doesNotContain("Complete onboarding", "token=token-123");
+    }
+
+    private static void collectContent(Part part, StringBuilder body) throws Exception {
+        Object content = part.getContent();
+        if (content instanceof Multipart multipart) {
+            for (int i = 0; i < multipart.getCount(); i++) {
+                collectContent(multipart.getBodyPart(i), body);
+            }
+        } else {
+            body.append(content);
+        }
     }
 }

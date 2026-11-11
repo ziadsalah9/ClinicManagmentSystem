@@ -789,6 +789,30 @@
         },
         {
           "v": "1",
+          "name": "Scheduling: create changed-hours exception",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/exceptions",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Changed-hours exception created\",()=>{pw.expect([201,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"exceptionId\",b.id);pw.env.set(\"exceptionVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"shiftId\": \"<<shiftId>>\",\n  \"type\": \"CHANGED_HOURS\",\n  \"dateFrom\": \"2026-11-22\",\n  \"dateTo\": \"2026-11-22\",\n  \"startTime\": \"10:00\",\n  \"endTime\": \"12:00\",\n  \"reason\": \"Reduced clinic hours\"\n}"
+          }
+        },
+        {
+          "v": "1",
           "name": "Scheduling: cancel exception",
           "method": "DELETE",
           "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/exceptions/<<exceptionId>>",
