@@ -66,13 +66,23 @@ The API base path is `/api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedu
 5. `409 STALE_VERSION` means the clinic changed before your decision. Reload the clinic first; do not blindly retry.
 6. The same verification controls are available in the web UI at `/admin/clinics` and `/admin/clinics/:clinicId`.
 
+### 7) Mobile request metadata
+Run the **07 - Mobile request metadata** folder after **01 - Owner password login** (or use any valid owner token in `ownerToken`). Spring Security runs first, so these requests need a JWT; mobile headers never authenticate a request.
+1. **Valid metadata** sends `source-mobile-app`, `app-version`, `os-version`, and `X-DEVICE-ID`; expect `200`.
+2. **Missing headers** omits `app-version` and `X-DEVICE-ID`; expect `400 MOBILE_METADATA_REQUIRED` with `missingHeaders`.
+3. **Invalid device ID** sends `not-a-uuid`; expect `400 MOBILE_METADATA_INVALID` with `invalidHeaders` containing `X-DEVICE-ID`.
+
+Metadata validation applies when any mobile header is present, or when the path matches `app.mobile-metadata.required-path-patterns` (empty by default). Excluded technical paths (`swagger`, `api-docs`, `actuator`, `error`) bypass validation. Headers are independent of JWT authentication and role authorization.
+
 ## Environment variables
 `baseUrl`, admin/owner/doctor phones+passwords, `adminToken/ownerToken/doctorToken`, `claimToken`, `clinicId/areaId/specialtyId`, `doctorId`, `doctorUserId`, refresh/version vars.
 Scheduling extras: `doctorClinicId`, `shiftId`, `shiftVersion`, `exceptionId`, `exceptionVersion`, `scheduleFrom`, `scheduleTo`, `sessionId`, `sessionVersion`.
 Verification extras: `clinicStatusFilter`, `verificationAction`, `verificationReason`, `verificationHistoryCount`.
+Mobile metadata extras: `mobileSourceApp`, `mobileAppVersion`, `mobileOsVersion`, `mobileDeviceId`, `mobileInvalidDeviceId`.
 
 ## Operational notes
 - Requires Flyway V9 applied for scheduling and Booking-generated sessions. V9 is additive; existing migrations must remain untouched.
 - 403 `PASSWORD_CHANGE_REQUIRED`: call `POST /api/v1/auth/password/change`.
 - Verification errors: `400 VERIFICATION_REASON_REQUIRED`, `409 INVALID_STATUS_TRANSITION`, `409 STALE_VERSION`.
 - Scheduling errors: `400 INVALID_INPUT`/`INVALID_DATE_RANGE`/`VALIDATION_FAILED`/`INVALID_REQUEST_BODY`/`INVALID_PARAMETER`/`MISSING_PARAMETER`, `403 ACCESS_DENIED`, `404 DOCTOR_CLINIC_NOT_FOUND`/`SHIFT_NOT_FOUND`/`EXCEPTION_NOT_FOUND`, `409 STALE_VERSION`/`SHIFT_NAME_CONFLICT`/`SHIFT_CONFLICT`/`BOOKING_CONFLICT`/`CONCURRENT_MODIFICATION`/`SCHEDULE_DATA_CONFLICT`. Responses include `title`, `detail`, `code`, `retryable`, and `errors[]` for validation failures.
+- Mobile metadata errors: `400 MOBILE_METADATA_REQUIRED` with `missingHeaders`, or `400 MOBILE_METADATA_INVALID` with `invalidHeaders`. Device IDs must match the configured `app.mobile-metadata.device-id-pattern` (UUID by default).

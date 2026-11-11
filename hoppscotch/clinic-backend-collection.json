@@ -883,6 +883,112 @@
           }
         }
       ]
+    },
+    {
+      "name": "07 - Mobile request metadata",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Mobile: list my clinics with valid metadata",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/me",
+          "params": [],
+          "headers": [
+            {
+              "key": "source-mobile-app",
+              "value": "<<mobileSourceApp>>"
+            },
+            {
+              "key": "app-version",
+              "value": "<<mobileAppVersion>>"
+            },
+            {
+              "key": "os-version",
+              "value": "<<mobileOsVersion>>"
+            },
+            {
+              "key": "X-DEVICE-ID",
+              "value": "<<mobileDeviceId>>"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Valid mobile metadata accepted\",()=>{pw.expect(pw.response.status).toBe(200);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Mobile: missing app-version and X-DEVICE-ID rejected",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/me",
+          "params": [],
+          "headers": [
+            {
+              "key": "source-mobile-app",
+              "value": "<<mobileSourceApp>>"
+            },
+            {
+              "key": "os-version",
+              "value": "<<mobileOsVersion>>"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Missing mobile metadata rejected\",()=>{pw.expect(pw.response.status).toBe(400);pw.expect(pw.response.body.code).toBe(\"MOBILE_METADATA_REQUIRED\");pw.expect(pw.response.body.missingHeaders).toInclude(\"app-version\");pw.expect(pw.response.body.missingHeaders).toInclude(\"X-DEVICE-ID\");});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Mobile: invalid X-DEVICE-ID rejected",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/me",
+          "params": [],
+          "headers": [
+            {
+              "key": "source-mobile-app",
+              "value": "<<mobileSourceApp>>"
+            },
+            {
+              "key": "app-version",
+              "value": "<<mobileAppVersion>>"
+            },
+            {
+              "key": "os-version",
+              "value": "<<mobileOsVersion>>"
+            },
+            {
+              "key": "X-DEVICE-ID",
+              "value": "<<mobileInvalidDeviceId>>"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Invalid mobile metadata rejected\",()=>{pw.expect(pw.response.status).toBe(400);pw.expect(pw.response.body.code).toBe(\"MOBILE_METADATA_INVALID\");pw.expect(pw.response.body.invalidHeaders).toInclude(\"X-DEVICE-ID\");});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        }
+      ]
     }
   ],
   "requests": []
