@@ -1,0 +1,254 @@
+SCHEDULING MODULE - USAGE AND CODE GUIDE
+Generated: 2026-11-11
+Project: H:\ZAE\App\clinic-backend
+
+--------------------------------------------------------------------------------
+1. WHAT IT DOES
+--------------------------------------------------------------------------------
+The Scheduling module manages doctor-clinic shifts, weekly working rules, breaks,
+exceptions and generated appointment sessions. Booking owns booking_session, so
+Scheduling never writes Booking tables directly. Scheduling calls BookingFacade to
+reconcile sessions while preserving booked appointments.
+
+The generation horizon is 60 clinic-local dates: today plus the next 59 days.
+Session generation is idempotent. A scheduled job reconciles every active
+doctor-clinic association using a PostgreSQL advisory lock per doctorClinicId.
+
+--------------------------------------------------------------------------------
+2. SECURITY AND SCOPE
+--------------------------------------------------------------------------------
+Permission: SCHEDULE_MANAGE
+Access: clinic OWNER/ADMIN managers, or the DOCTOR who owns the doctorClinic
+association. Actor IDs are never accepted from request bodies.
+
+Base path:
+/api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedule
+
+{clinicId} is the clinic UUID. {doctorClinicId} is the doctor-clinic association
+UUID, not the doctor UUID. Get it from:
+GET /api/v1/clinics/{clinicId}/doctors
+The Hoppscotch request "Get all doctors in clinic" stores it as doctorClinicId.
+
+--------------------------------------------------------------------------------
+3. HOPPSCOTCH QUICK START
+--------------------------------------------------------------------------------
+1. Run authentication and store ownerToken (or a doctor token for the owning doctor).
+2. Run "Get all doctors in clinic" to populate doctorClinicId.
+3. Run folder "06 - Scheduling" in order:
+   - Scheduling: list shifts
+   - Scheduling: create Sunday shift
+   - Scheduling: preview capacity
+   - Scheduling: update shift
+   - Scheduling: preview shift change
+   - Scheduling: activate shift
+   - Scheduling: list exceptions
+   - Scheduling: create day-off exception
+   - Scheduling: cancel exception
+   - Scheduling: generate sessions
+   - Scheduling: list sessions
+
+Environment variables:
+baseUrl, ownerToken, clinicId, doctorClinicId, shiftId, shiftVersion,
+exceptionId, exceptionVersion, scheduleFrom, scheduleTo, sessionId, sessionVersion.
+
+If an update returns 409 STALE_VERSION, run "list shifts" again to refresh
+shiftId/shiftVersion, then retry.
+
+--------------------------------------------------------------------------------
+4. ENDPOINTS
+--------------------------------------------------------------------------------
+GET /shifts
+  List shifts for the doctor-clinic association.
+
+POST /shifts
+  Create a shift.
+  Body:
+  {
+    "name": "Morning clinic",
+    "capacityMode": "CALCULATED",
+    "averageVisitMinutes": 15,
+    "fixedCapacity": null,
+    "effectiveFrom": "2026-11-11",
+    "expectedVersion": null,
+    "weeklyRules": [
+      {
+        "dayOfWeek": "SUNDAY",
+        "startTime": "09:00",
+        "endTime": "14:00",
+        "followUpQuota": 2,
+        "breaks": [
+          { "startTime": "11:00", "endTime": "11:15" }
+        ]
+      }
+    ]
+  }
+  capacityMode: CALCULATED or FIXED.
+  averageVisitMinutes: 3..60 (required for CALCULATED).
+  fixedCapacity: >= 1 (required for FIXED).
+  weeklyRules must be non-empty. Rules for the same day must not overlap.
+  Returns 201 with ShiftView.
+
+PUT /shifts/{shiftId}
+  Update a shift using the same body as POST. expectedVersion is optional but
+  recommended. An update that would invalidate existing bookings returns
+  409 BOOKING_CONFLICT.
+
+PATCH /shifts/{shiftId}/activation
+  Body: { "active": true, "expectedVersion": 0 }
+  expectedVersion is required by validation. Deactivation stops future generation
+  but does not delete existing sessions and does not reconcile them.
+
+POST /previews/capacity
+  Body: same ShiftRequest shape. Returns CapacityPreviewView:
+  { from, to, sessions: [{date, startTime, endTime, capacity, followUpQuota}] }
+  Read-only; no persistence.
+
+POST /shifts/{shiftId}/previews/change
+  Body: same ShiftRequest shape. Returns ChangePreviewView:
+  { affectedSessions: [...], hasBlockingChanges, conflicts: [...] }
+  Read-only; reports booking conflicts before applying an update.
+
+GET /exceptions
+  List active and cancelled exceptions.
+
+POST /exceptions
+  Body:
+  {
+    "shiftId": null,
+    "type": "DAY_OFF",
+    "dateFrom": "2026-11-15",
+    "dateTo": "2026-11-15",
+    "startTime": null,
+    "endTime": null,
+    "reason": "Public holiday"
+  }
+  type: DAY_OFF, DATE_RANGE, or TIME_RANGE.
+  dateFrom and dateTo are required. shiftId null applies to all shifts.
+  TIME_RANGE requires startTime/endTime. Returns ExceptionView.
+
+DELETE /exceptions/{exceptionId}
+  Cancel an exception. Body: { "expectedVersion": 0 }
+  Sets cancelledAt; affected sessions are reconciled within the horizon.
+
+POST /sessions/generate
+  Idempotent reconciliation. Returns SessionGenerationView:
+  { from, to, sessions: [...], conflictingSessionIds: [...] }
+  Existing booked sessions are preserved.
+
+GET /sessions?from=2026-11-11&to=2027-01-09
+  List generated sessions in a clinic-local date range. Both parameters are
+  required. Returns a list of SessionView.
+
+--------------------------------------------------------------------------------
+5. RESPONSE SHAPES
+--------------------------------------------------------------------------------
+ShiftView:
+{id, doctorClinicId, name, capacityMode, averageVisitMinutes, fixedCapacity,
+ effectiveFrom, active, version, weeklyRules, createdAt, updatedAt}
+
+WeeklyRuleView:
+{dayOfWeek, startTime, endTime, followUpQuota, breaks, availableSeconds,
+ capacity, estimatedVisitSeconds}
+
+ExceptionView:
+{id, doctorClinicId, shiftId, type, dateFrom, dateTo, startTime, endTime,
+ reason, cancelled, cancelledAt, version, createdAt, updatedAt}
+
+SessionView:
+{id, doctorClinicId, shiftId, sessionDate, startTime, endTime, capacity,
+ bookedCount, followUpQuota, followUpBookedCount, status, version, createdAt,
+ updatedAt}
+
+--------------------------------------------------------------------------------
+6. ERRORS
+--------------------------------------------------------------------------------
+400 INVALID_INPUT / INVALID_DATE_RANGE
+403 ACCESS_DENIED or PASSWORD_CHANGE_REQUIRED
+404 DOCTOR_CLINIC_NOT_FOUND / SHIFT_NOT_FOUND / EXCEPTION_NOT_FOUND
+409 STALE_VERSION / SHIFT_NAME_CONFLICT / SHIFT_CONFLICT / BOOKING_CONFLICT
+
+Optimistic locking is used for shift, exception and session updates. Never ignore
+409 STALE_VERSION; reload the resource and retry with the current version.
+
+--------------------------------------------------------------------------------
+7. CODE MAP
+--------------------------------------------------------------------------------
+scheduling/domain/model
+  ScheduleShift, WeeklyShiftRule, ShiftBreak, ScheduleException, ScheduleConflict,
+  capacity calculator and conflict detector. Pure domain logic.
+
+scheduling/application/ScheduleApplicationService.java
+  Public use cases, permission/ownership checks, previews and orchestration.
+
+scheduling/application/ScheduleHorizonService.java
+  60-day reconciliation, guard locking and Booking synchronization.
+
+scheduling/application/ScheduleSessionPlanner.java
+  Expands weekly rules into concrete clinic-local sessions and applies exceptions.
+
+scheduling/application/ScheduleInputs.java
+  Command records (ShiftInput, WeeklyRuleInput, BreakInput, ActivationInput,
+  ExceptionInput, CancelExceptionInput).
+
+scheduling/application/ScheduleViews.java
+  Response projections (ShiftView, ExceptionView, CapacityPreviewView,
+  ChangePreviewView, SessionView, SessionGenerationView).
+
+scheduling/application/ScheduleShiftRepository.java
+scheduling/application/ScheduleExceptionRepository.java
+scheduling/application/ScheduleGuardRepository.java
+  Persistence ports implemented under scheduling/infrastructure/persistence.
+
+scheduling/infrastructure/scheduler/SessionHorizonJob.java
+  Scheduled reconciliation. Uses pg_try_advisory_lock(hashtextextended(? , 0))
+  on a dedicated connection; concurrent runs are skipped.
+
+scheduling/presentation/ScheduleController.java
+scheduling/presentation/ScheduleApiModels.java
+scheduling/presentation/ScheduleExceptionHandler.java
+  REST endpoints, validated request records and ProblemDetail mappings.
+
+booking/BookingFacade.java
+booking/internal/application/BookingSessionService.java
+  Cross-module contract and idempotent session synchronization. Booking owns
+  booking_session; uniqueness is (doctor_clinic_id, shift_id, session_date).
+
+doctorclinic/DoctorClinicFacade.java
+doctorclinic/DoctorClinicScheduleInfo.java
+  Supplies clinic local timezone and active doctor-clinic schedule data.
+
+resources/db/migration/V9__create_scheduling_and_booking_sessions.sql
+  Adds scheduling tables and booking.booking_session. Do not edit V1-V8.
+
+--------------------------------------------------------------------------------
+8. TESTS
+--------------------------------------------------------------------------------
+Run from H:\ZAE\App\clinic-backend with PowerShell:
+
+.\mvnw.cmd -q clean test
+
+Current result: 71 tests pass, 0 failures/errors.
+
+Targeted integration tests (quote the comma-separated value in PowerShell):
+.\mvnw.cmd -q "-Dtest=IdentityPersistenceIntegrationTest,BookingSessionPersistenceIntegrationTest" test
+
+Testcontainers requires Docker. The test profile uses Hibernate
+default_schema=public because the PostgreSQL test username is "clinic" and V2
+creates a clinic schema; without the setting PostgreSQL current_schema() resolves
+to clinic while Flyway and event_publication live in public.
+
+Surefire may print "[ERROR] Surefire is going to kill self fork JVM" after a
+successful run. The Maven command still exits 0.
+
+--------------------------------------------------------------------------------
+9. RULES FOR FUTURE CHANGES
+--------------------------------------------------------------------------------
+- Keep packages lowercase; use scheduling.domain, not scheduling.Domian.
+- Add migrations; never edit V1-V9 after they have been applied.
+- Keep ddl-auto=validate and make V9 match JPA mappings exactly.
+- Scheduling must call BookingFacade, never Booking repositories/entities.
+- Preserve booked sessions during reconciliation.
+- Return 409 BOOKING_CONFLICT for changes that invalidate bookings.
+- Do not deactivate/delete sessions as a side effect of shift deactivation.
+- Use clinic-local dates and the 60-date horizon.
+- Never trust actor IDs from request bodies.

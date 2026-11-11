@@ -1,0 +1,291 @@
+CLINIC BACKEND - ENDPOINT AND SYSTEM FLOW GUIDE
+===============================================
+Generated: 2026-11-11 (updated for scheduling and Booking-generated sessions)
+Project: H:\ZAE\clinic-backend
+Base URL (local): http://localhost:8083
+
+This file explains each API endpoint (what it does, auth, how to use it) and the main system flows.
+It also marks endpoints hidden from Swagger and excluded from the recommended Hoppscotch collection because they are duplicates or depend on SMS/OTP provider-style flows.
+
+--------------------------------------------------------------------------------
+1) GLOBAL CONVENTIONS
+--------------------------------------------------------------------------------
+- Security: stateless JWT (OAuth2 Resource Server, HS256). Send header: Authorization: Bearer <accessToken>.
+- Claims: access token contains subject (user UUID), roles (e.g. ROLE_ADMIN, ROLE_OWNER, ROLE_DOCTOR), and may contain pwd_change_required=true.
+- Password-change gate: if the user must change password (direct-provision initial password), most protected /api/** requests return 403 application/problem+json with code PASSWORD_CHANGE_REQUIRED. Allowed while gated: POST /api/v1/auth/change-password (alias /password/change), POST /api/v1/auth/refresh, POST /api/v1/auth/logout. Login/refresh responses include mustChangePassword.
+- Errors: RFC 7807 ProblemDetail (type/title/status/detail/code/instance) from module/global handlers. Validation failures -> 400.
+- Public (permitAll): POST /api/v1/auth/** except POST /api/v1/auth/change-password and its alias /api/v1/auth/password/change (authenticated). GET /api/v1/auth/otp/fake/** is local-only and hidden. Actuator health is permitAll.
+- IDs/versions: UUID ids. Some updates use optimistic locking (expectedVersion) and create flows may use Idempotency-Key.
+- Modules (Spring Modulith): identity, clinic, doctor, doctorclinic, scheduling, booking, provisioning, platformadmin/subscription/review scaffolding. Cross-module access is via Facades only.
+- DB migrations: Flyway V1-V9. Applied migrations must never be edited. V6 adds must_change_password and lightweight doctor onboarding invite. V8 adds clinic.verification_event for the clinic verification audit trail (additive table + indexes). V9 adds scheduling.ts_shift, ts_weekly_rule, ts_break, ts_exception, ts_generation_guard and booking.booking_session (additive; exact Hibernate-validated schema).
+- Clinic verification audit: every approve/reject/request-information/suspend/reactivate decision is stored in clinic.verification_event in the same transaction as the status change, including actor, action, previous/new status, reason and timestamp.
+- Never log passwords, OTP codes, raw invitation/onboarding tokens, or JWTs. Local adapters may print tokens only in local profile for development.
+
+--------------------------------------------------------------------------------
+2) SYSTEM FLOWS (RECOMMENDED)
+--------------------------------------------------------------------------------
+FLOW A - Bootstrap / System Admin
+1. Ensure DB/Flyway applied and app running. For full onboarding flows, apply V6 safely (no edit to V1-V5).
+2. Log in as system admin: POST /api/v1/auth/password/login with admin phone/password (local default in ADMIN_CREDENTIALS.txt; change for non-local). Save accessToken as adminToken.
+3. Admin can provision owners/admins: POST /api/v1/admin/owners, POST /api/v1/admin/admins (ROLE_ADMIN).
+4. Admin can list/filter all clinics: GET /api/platform-admin/clinics (optional status/area/owner/date filters).
+5. Admin reviews a clinic and applies a controlled verification action: POST /api/platform-admin/clinics/{clinicId}/verification. History: GET /api/platform-admin/clinics/{clinicId}/verification-history.
+
+FLOW B - Owner setup
+1. Admin provisions owner: POST /api/v1/admin/owners.
+2. Owner logs in: POST /api/v1/auth/password/login -> ownerToken.
+3. Owner loads catalogs: GET /api/v1/areas, GET /api/v1/specialties (authenticated).
+4. Owner creates clinic: POST /api/v1/clinics with Idempotency-Key and areaId/timeZone/phones -> save clinicId. Owner can list/get/update own clinics.
+
+FLOW C - Doctor onboarding (choose ONE)
+
+C1. Direct provision (admin/owner provisions full doctor profile immediately)
+1. Admin or clinic owner (ROLE_ADMIN or ROLE_OWNER) calls POST /api/v1/admin/doctors/direct with full profile fields and mandatory clinicId.
+2. System validates clinicId is present and clinic exists via ClinicFacade.existsById(clinicId). If actor is an OWNER (non-admin owner context), system enforces clinic ownership (ClinicFacade.isOwnedBy) to prevent IDOR. Specialties are validated via DoctorFacade.assertActiveSpecialtiesExist before writes.
+3. System atomically creates identity user (mustChangePassword=true) + DOCTOR StaffMembership + doctor profile. The request `password` is used as the doctor's initial password (stored only as a hash). It is NEVER logged/returned by the API; the provisioning actor communicates it to the doctor.
+4. Doctor logs in: POST /api/v1/auth/password/login with the initial password. Response includes mustChangePassword=true and the JWT carries pwd_change_required.
+5. Protected APIs return 403 PASSWORD_CHANGE_REQUIRED until changed. Doctor calls POST /api/v1/auth/change-password (authenticated; body {currentPassword, newPassword, deviceId?}) -> must_change_password cleared, fresh tokens returned.
+6. Owner/admin configures per-clinic doctor settings: PUT /api/v1/clinics/{clinicId}/doctors/{doctorId} (requires permissions as enforced).
+
+C2. Invite + claim (LIGHTWEIGHT invite; doctor completes profile after claim)
+1. Admin/owner calls POST /api/v1/admin/doctors/invite (or POST /api/v1/owners/doctors/invite) with ONLY: {phone, fullName, email?, clinicId}. No professional title/bio/experience/syndicate/gender/specialtyIds at invite time.
+2. System validates clinicId is present and clinic exists via ClinicFacade.existsById(clinicId). If actor is OWNER, system enforces ClinicFacade.isOwnedBy(clinicId, actorUserId) (IDOR prevention). Identity creates a hashed single-use onboarding invite with expiry and per-phone rate limiting; invite payload is lightweight (contact + clinicId only).
+3. If email is provided, the raw claim token + onboarding link are emailed asynchronously after the invite transaction commits (Gmail SMTP via EmailService). If email is omitted, the existing phone delivery adapter is used. Email failures are logged without failing/rolling back the invite transaction. Never log raw tokens (local console fallback only, and only when email is omitted).
+4. Doctor calls POST /api/v1/auth/doctors/claim (public, permitAll) with {token, password, locale?, deviceId?}.
+5. System verifies token (hashed, expiry, attempt limits), creates identity user + DOCTOR membership for the invited clinicId, marks invite claimed, and issues tokens. Claim is identity/provisioning-orchestrated and does NOT create a full doctor profile from invite payload (invite is lightweight).
+6. Doctor completes full professional profile after claim: POST /api/v1/doctors/me (authenticated doctor token) with professionalTitle/bio/yearsExperience/syndicateNumber/gender/specialtyIds. Use GET /api/v1/specialties to select valid specialtyIds.
+7. Continue with clinic/doctor settings as in C1 step 6.
+
+FLOW D - Legacy staff invitation (clinic-scoped)
+1. Owner/staff with STAFF_MANAGE creates invitation: POST /api/v1/clinics/{clinicId}/invitations.
+2. Invitee accepts: POST /api/v1/auth/invitations/accept. Separate from doctor onboarding claim flow.
+
+FLOW E - Token lifecycle
+- Login: POST /api/v1/auth/password/login -> access + refresh tokens.
+- Refresh: POST /api/v1/auth/refresh.
+- Logout: POST /api/v1/auth/logout.
+- Password change: POST /api/v1/auth/change-password (authenticated; alias: /api/v1/auth/password/change) -> clears must_change_password and issues new tokens.
+
+FLOW F - Doctor scheduling
+- Resolve doctorClinicId: GET /api/v1/clinics/{clinicId}/doctors -> active doctor-clinic association id.
+- List/create shifts: GET|POST /api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedule/shifts.
+- Optional read-only checks: POST .../previews/capacity and POST .../shifts/{shiftId}/previews/change.
+- Update or activate: PUT .../shifts/{shiftId} and PATCH .../shifts/{shiftId}/activation (expectedVersion on updates).
+- Exceptions: GET|POST .../schedule/exceptions; DELETE .../schedule/exceptions/{exceptionId} (cancel, expectedVersion).
+- Generate/query sessions: POST .../schedule/sessions/generate and GET .../schedule/sessions?from=YYYY-MM-DD&to=YYYY-MM-DD.
+- Sessions are stored in Booking and keep booked appointments. A shift update that invalidates bookings returns 409 BOOKING_CONFLICT. The horizon is 60 clinic-local dates (today + 59) and the scheduled job reconciles it with an advisory lock.
+
+--------------------------------------------------------------------------------
+3) AUTH ENDPOINTS (/api/v1/auth)
+--------------------------------------------------------------------------------
+RECOMMENDED
+POST /api/v1/auth/password/login  [PUBLIC]
+  Body: {phone (E.164), password, deviceId?}
+  Returns 200: TokenResponse {..., mustChangePassword}. If true, JWT has pwd_change_required and only change/refresh/logout are allowed.
+
+POST /api/v1/auth/change-password  [AUTHENTICATED]
+POST /api/v1/auth/password/change  [AUTHENTICATED, alias]
+  Body: {currentPassword, newPassword(10-64), deviceId?}
+  Returns 200: TokenResponse {..., mustChangePassword:false} (fresh tokens). Clears must-change state.
+
+POST /api/v1/auth/refresh  [PUBLIC]
+  Body: {refreshToken, deviceId?}
+
+POST /api/v1/auth/logout  [PUBLIC]
+  Body: {refreshToken}. Returns 204.
+
+POST /api/v1/auth/owner-registration  [PUBLIC]
+  Body: {phone, fullName, email?, password, verificationToken}. Returns 201.
+
+POST /api/v1/auth/invitations/accept  [PUBLIC]
+  Body: {token, fullName, password?, locale(ar|en)?}. Returns 201.
+
+POST /api/v1/auth/doctors/claim  [PUBLIC] - provisioning.presentation.DoctorOnboardingClaimController
+  What: Claim LIGHTWEIGHT doctor onboarding invite and set own password. Creates identity + DOCTOR membership and issues tokens. Full doctor profile is completed after claim via POST /api/v1/doctors/me.
+  Body: {token, password(10-64), locale(ar|en)?, deviceId?}.
+  Returns 201: {user, membership, tokens, message}.
+  Errors: 400 invalid input/token shape, 404/400 invalid token, 409 existing account/conflict, 410 expired/inactive invite as mapped, 429 too many attempts/rate-limited as mapped.
+
+HIDDEN / DUPLICATE / PROVIDER-STYLE (kept for compatibility/local dev; hidden from Swagger, excluded from recommended Hoppscotch)
+POST /api/v1/auth/otp/request, POST /api/v1/auth/otp/verify  [PUBLIC, @Hidden]
+GET /api/v1/auth/otp/fake, /otp/fake/{challengeId}  [PUBLIC, local, @Hidden]
+POST /api/v1/auth/owner/password-login, /doctor/password-login  [PUBLIC, @Hidden] (use /password/login)
+
+--------------------------------------------------------------------------------
+4) ADMIN PROVISIONING (/api/v1/admin)
+--------------------------------------------------------------------------------
+POST /api/v1/admin/owners  [ROLE_ADMIN]
+  Body: {phone, fullName, email?, password}. Returns 201 {user, message}.
+
+POST /api/v1/admin/admins  [ROLE_ADMIN]
+  Body: {phone, fullName, email?, password}. Returns 201 {user, message}.
+
+--------------------------------------------------------------------------------
+4A) PLATFORM ADMIN (/api/platform-admin)
+--------------------------------------------------------------------------------
+GET /api/platform-admin/clinics  [ROLE_ADMIN]
+  What: List all clinics for platform administration with owner identity. Returns 200 array of {clinic, ownerId, ownerName, ownerPhone, owner:{id,fullName,phone,status}}. Owner lookup is batched via IdentityFacade (no N+1).
+  Optional filters (AND-combined): status (PENDING_VERIFICATION|ACTIVE|SUSPENDED|REJECTED), areaId (UUID), ownerUserId (UUID), createdFrom (ISO-8601 instant), createdTo (ISO-8601 instant).
+  Example: /api/platform-admin/clinics?status=PENDING_VERIFICATION&areaId=<uuid>&createdFrom=2026-01-01T00:00:00Z
+  Invalid status/date range -> 400. createdFrom after createdTo -> 400.
+  Note: this is an administrator view. Public patient clinic discovery, when added, must expose only ACTIVE clinics.
+
+GET /api/platform-admin/clinics/{clinicId}  [ROLE_ADMIN]
+  What: Get any clinic by id for admin review/support. Returns 200 {clinic, ownerId, ownerName, ownerPhone, owner}.
+  Auth: Authorization: Bearer <adminToken>.
+
+PUT /api/platform-admin/clinics/{clinicId}  [ROLE_ADMIN]
+  What: Admin update any clinic profile (bypasses owner/member CLINIC_PROFILE_UPDATE permission; actor must be system admin). Uses optimistic locking.
+  Auth: Authorization: Bearer <adminToken>.
+  Body: {name, address, areaId, timeZone, phones[], expectedVersion} (same validation as clinic update; get current `version` first).
+  Returns 200: {clinic, ownerId, ownerName, ownerPhone, owner}. 404 not found, 409 STALE_VERSION/name conflict, 400 validation/area errors.
+
+POST /api/platform-admin/clinics/{clinicId}/verification  [ROLE_ADMIN]
+  What: Apply one controlled clinic verification transition and append an audit event atomically.
+  Auth: Authorization: Bearer <adminToken>. Service also verifies IdentityFacade.isSystemAdmin(actor).
+  Body: {action, reason?, expectedVersion}.
+    action = APPROVE           : PENDING_VERIFICATION -> ACTIVE (reason optional)
+    action = REJECT            : PENDING_VERIFICATION -> REJECTED (reason REQUIRED; terminal)
+    action = REQUEST_INFORMATION: PENDING_VERIFICATION -> PENDING_VERIFICATION (reason REQUIRED)
+    action = SUSPEND           : ACTIVE -> SUSPENDED (reason REQUIRED)
+    action = REACTIVATE        : SUSPENDED -> ACTIVE (reason optional)
+  Returns 200: {clinic:{clinic,ownerId,ownerName,ownerPhone,owner}, history:[{id,actorUserId,actorName,action,previousStatus,newStatus,reason,createdAt}]}.
+  Errors: 400 VERIFICATION_REASON_REQUIRED/invalid action/invalid input; 403 not a system admin; 404 clinic not found; 409 INVALID_STATUS_TRANSITION/STALE_VERSION.
+  Stale version: reload GET clinic, review the current status, then retry with the new expectedVersion.
+
+GET /api/platform-admin/clinics/{clinicId}/verification-history  [ROLE_ADMIN]
+  What: Newest-first verification audit trail for one clinic.
+  Returns 200: [{id,actorUserId,actorName,action,previousStatus,newStatus,reason,createdAt}].
+  Errors: 403 not a system admin; 404 clinic not found.
+
+How to use from the web UI:
+  1. Sign in as a platform admin.
+  2. Open /admin/clinics. Filter by search/status/area/owner/registration date.
+  3. Open a clinic. The Verification decision panel shows only actions valid for its current status.
+  4. Enter a reason where required and submit. The status, version and verification history refresh.
+  5. Rejected clinics are terminal; no further verification action is offered.
+
+--------------------------------------------------------------------------------
+5) DOCTOR PROVISIONING/ONBOARDING (/api/v1/admin, /api/v1/owners, /api/v1/auth)
+--------------------------------------------------------------------------------
+RECOMMENDED
+POST /api/v1/admin/doctors/direct  [ROLE_ADMIN or ROLE_OWNER]
+  What: FULL doctor provisioning (immediate profile). Atomically creates identity account + DOCTOR clinic membership + doctor profile. Mandatory clinicId; validates existence via ClinicFacade.existsById; OWNER actor must own clinic (IDOR prevention). Validates specialties. Uses the supplied `password` as the initial password (hash only; never returned/logged) and sets mustChangePassword=true.
+  Body: ProvisionDoctorRequest {phone, fullName, email?, password, clinicId, professionalTitle, bio?, yearsExperience(0-80), syndicateNumber?, gender(MALE|FEMALE|UNSPECIFIED), specialtyIds(1-8 UUIDs)}.
+  Returns 201: {user, membership, doctor, message, mustChangePassword:true}.
+  Follow-up: doctor logs in with the initial password, then POST /api/v1/auth/change-password.
+
+POST /api/v1/admin/doctors/invite  [ROLE_ADMIN or ROLE_OWNER]
+POST /api/v1/owners/doctors/invite  [ROLE_ADMIN or ROLE_OWNER]
+  What: SMART lightweight doctor invitation. Mandatory clinicId; validates existence via ClinicFacade.existsById; OWNER actor must own clinic (IDOR prevention).
+    - New phone: creates hashed single-use claim invite with expiry/rate limiting and (when email is supplied) emails the claim link/token asynchronously after commit.
+    - Existing user: no new account/token; links the user to clinicId with an ACTIVE DOCTOR StaffMembership. If they are already a member of that clinic -> 409 ALREADY_MEMBER.
+  Body: InviteDoctorRequest {phone(E.164), fullName, email?, clinicId(UUID, required)}. Use email to receive the claim token by Gmail SMTP.
+  Returns 201: {status:"INVITED", inviteId, phone, expiresAt, user:null, membership:null, message}
+              or {status:"ADDED_EXISTING", inviteId:null, phone, expiresAt:null, user, membership, message}.
+  Follow-up (INVITED only): doctor POST /api/v1/auth/doctors/claim with emailed token -> then POST /api/v1/doctors/me to complete full profile.
+  Email setup (local): set env GMAIL_APP_PASSWORD (Gmail App Password, not account password); optional DOCTOR_INVITATION_CLAIM_PAGE_URL and DOCTOR_INVITATION_FROM. Config lives in application.properties (project uses .properties, not .yml): spring.mail.* + app.doctor-invitation.*. Email delivery is best-effort/logged; it never rolls back a committed invite.
+  Deliverability: for production use a transactional provider (for example Brevo, Mailgun, Postmark, Resend, or SES SMTP) and a public HTTPS claim URL. Set MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, DOCTOR_INVITATION_FROM, DOCTOR_INVITATION_FROM_NAME, DOCTOR_INVITATION_REPLY_TO, and DOCTOR_INVITATION_CLAIM_PAGE_URL. Configure SPF, DKIM, and DMARC for the From domain. Gmail SMTP from a free @gmail.com address is suitable only for development; it cannot authorize a custom From domain and is more likely to land in spam.
+
+HIDDEN / DUPLICATE (kept for compatibility)
+POST /api/v1/admin/doctors  [ROLE_ADMIN or ROLE_OWNER, @Hidden] - use /direct or /invite.
+POST /api/v1/owners/doctors  [ROLE_ADMIN or ROLE_OWNER, @Hidden] - use /admin/doctors/direct or /owners/doctors/invite.
+
+--------------------------------------------------------------------------------
+6) CATALOG ENDPOINTS
+--------------------------------------------------------------------------------
+GET /api/v1/areas?city=...  [AUTHENTICATED]
+GET /api/v1/specialties  [AUTHENTICATED] - use before direct provisioning and before completing doctor profile after claim.
+
+--------------------------------------------------------------------------------
+7) CLINIC ENDPOINTS (/api/v1/clinics)
+--------------------------------------------------------------------------------
+POST /api/v1/clinics  [AUTHENTICATED] (Idempotency-Key)
+GET  /api/v1/clinics/me
+GET  /api/v1/clinics/{clinicId}
+PUT  /api/v1/clinics/{clinicId} (expectedVersion)
+
+--------------------------------------------------------------------------------
+8) CLINIC INVITATIONS
+--------------------------------------------------------------------------------
+POST /api/v1/clinics/{clinicId}/invitations  [AUTHENTICATED, STAFF_MANAGE] - general staff invitation, separate from doctor onboarding claim.
+
+--------------------------------------------------------------------------------
+9) DOCTOR PROFILE ENDPOINTS (/api/v1/doctors/me)
+--------------------------------------------------------------------------------
+GET  /api/v1/doctors/me  [AUTHENTICATED]
+  Get current doctor's profile.
+
+POST /api/v1/doctors/me  [AUTHENTICATED]
+  Create current doctor's professional profile. REQUIRED after lightweight invite claim (claim creates identity+membership only). Also used by self-service doctor creation where allowed.
+  Body: {professionalTitle, bio?, yearsExperience, syndicateNumber?, gender, specialtyIds(1-8 active UUIDs)}.
+
+PUT  /api/v1/doctors/me  [AUTHENTICATED]
+  Update profile with optimistic locking. Body includes expectedVersion plus profile fields.
+
+--------------------------------------------------------------------------------
+10) DOCTOR-CLINIC SETTINGS
+--------------------------------------------------------------------------------
+PUT /api/v1/clinics/{clinicId}/doctors/{doctorId}  [AUTHENTICATED]
+GET /api/v1/clinics/{clinicId}/doctors  [AUTHENTICATED]
+GET /api/v1/doctors/me/clinics  [AUTHENTICATED]
+
+--------------------------------------------------------------------------------
+11) SCHEDULING (/api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedule)
+--------------------------------------------------------------------------------
+Permissions: SCHEDULE_MANAGE required. OWNER/ADMIN clinic managers or the DOCTOR who owns the doctorClinic association may access. Never accept actor IDs from request bodies.
+
+GET  /shifts
+POST /shifts
+  Body: {name, capacityMode(CALCULATED|FIXED), averageVisitMinutes(3..60), fixedCapacity(>=1), effectiveFrom(YYYY-MM-DD), weeklyRules[], expectedVersion?}.
+  Weekly rule: {dayOfWeek, startTime, endTime, followUpQuota, breaks:[{startTime,endTime}]}. Rules must be non-empty and time ranges must not overlap.
+PUT  /shifts/{shiftId}
+  Update an existing shift; expectedVersion optional. Changing an active shift reconciles sessions and blocks with 409 BOOKING_CONFLICT if existing bookings would be invalidated.
+PATCH /shifts/{shiftId}/activation
+  Body: {active, expectedVersion?}. Deactivation stops future generation and does not delete existing sessions or trigger reconciliation.
+
+POST /previews/capacity
+POST /shifts/{shiftId}/previews/change
+  Read-only previews of generated session counts/capacity; no persistence.
+
+GET  /exceptions
+POST /exceptions
+  Body: {shiftId?, type(DAY_OFF|DATE_RANGE|TIME_RANGE), dateFrom, dateTo?, startTime?, endTime?, reason}.
+DELETE /exceptions/{exceptionId}
+  Cancel exception; body {expectedVersion?}. Affected sessions are reconciled in the 60-day horizon.
+
+POST /sessions/generate
+  Idempotent reconciliation of the 60-day horizon. Existing booked sessions are preserved.
+GET  /sessions?from=YYYY-MM-DD&to=YYYY-MM-DD
+  List generated sessions in the requested clinic-local date range.
+
+Errors: 400 INVALID_INPUT/INVALID_DATE_RANGE, 403 ACCESS_DENIED, 404 DOCTOR_CLINIC_NOT_FOUND/SHIFT_NOT_FOUND/EXCEPTION_NOT_FOUND, 409 STALE_VERSION/SHIFT_NAME_CONFLICT/SHIFT_CONFLICT/BOOKING_CONFLICT.
+
+Scheduled reconciliation: SessionHorizonJob uses pg_try_advisory_lock(hashtextextended(doctorClinicId, 0)) on a dedicated connection; concurrent runs skip. Booking owns booking_session and uniqueness is (doctor_clinic_id, shift_id, session_date).
+
+--------------------------------------------------------------------------------
+12) ENDPOINT VISIBILITY / HOPPSCOTCH POLICY
+--------------------------------------------------------------------------------
+Visible and recommended for normal manual testing:
+- /api/v1/auth/password/login, /change-password (alias /password/change), /refresh, /logout, /owner-registration, /invitations/accept, /doctors/claim
+- /api/v1/admin/owners, /admins, /doctors/direct, /doctors/invite
+- /api/v1/owners/doctors/invite
+- /api/platform-admin/clinics
+- /api/v1/areas, /specialties
+- /api/v1/clinics (+/me,+/{id}), /clinics/{id}/invitations
+- /api/v1/doctors/me, /api/v1/clinics/{id}/doctors/{id}, /clinics/{id}/doctors, /doctors/me/clinics
+- /api/v1/clinics/{clinicId}/doctors/{doctorClinicId}/schedule/** (shifts, previews, exceptions, session generation/query)
+
+Hidden from Swagger and excluded from recommended Hoppscotch collection:
+- POST /api/v1/auth/otp/request, /otp/verify; GET /api/v1/auth/otp/fake*
+- POST /api/v1/auth/owner/password-login, /doctor/password-login
+- POST /api/v1/admin/doctors, /api/v1/owners/doctors
+
+--------------------------------------------------------------------------------
+13) OPERATIONAL NOTES
+--------------------------------------------------------------------------------
+- Apply Flyway V9 before using scheduling or session generation. V9 is additive; never edit applied V1-V8.
+- Scheduling and Booking use optimistic locking (expectedVersion) and PostgreSQL advisory/guard-row locking; return 409 STALE_VERSION instead of overwriting concurrent updates.
+- Apply Flyway V6 safely before using invite/claim or must-change-password runtime behavior. V6 is now shaped for lightweight invites (profile payload columns nullable; no heavy invite fields required). Never edit applied V1-V5.
+- All invite/direct provisioning paths must pass mandatory clinicId, ClinicFacade.existsById validation, and OWNER ownership checks to prevent IDOR.
+- `@Hidden` affects OpenAPI/Swagger exposure; it does not remove routes. Access is still controlled by Spring Security, roles/permissions, and business validation.

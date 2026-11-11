@@ -1,0 +1,865 @@
+{
+  "v": 1,
+  "name": "Clinic Backend - Recommended (No SMS/OTP)",
+  "folders": [
+    {
+      "v": 1,
+      "name": "01 - Auth (password)",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Admin password login",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/password/login",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Admin logged in\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(b&&b.accessToken)pw.env.set(\"adminToken\",b.accessToken);});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<adminPhone>>\",\n  \"password\": \"<<adminPassword>>\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Owner password login",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/password/login",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Owner logged in\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(b&&b.accessToken){pw.env.set(\"ownerToken\",b.accessToken);pw.env.set(\"ownerRefreshToken\",b.refreshToken);}});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<ownerPhone>>\",\n  \"password\": \"<<ownerPassword>>\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Doctor password login",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/password/login",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Doctor login\",()=>{pw.expect([200,403,423]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.accessToken){pw.env.set(\"doctorToken\",b.accessToken);pw.env.set(\"doctorRefreshToken\",b.refreshToken);}});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<doctorPhone>>\",\n  \"password\": \"<<doctorNewPassword>>\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Change password (temp -> new, doctor token)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/password/change",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Password changed\",()=>{pw.expect([200,401,403]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.accessToken){pw.env.set(\"doctorToken\",b.accessToken);pw.env.set(\"doctorRefreshToken\",b.refreshToken);}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<doctorToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"currentPassword\": \"<<doctorTempPassword>>\",\n  \"newPassword\": \"<<doctorNewPassword>>\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Refresh token",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/refresh",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Refreshed\",()=>{pw.expect([200,401]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.accessToken){pw.env.set(\"ownerToken\",b.accessToken);pw.env.set(\"ownerRefreshToken\",b.refreshToken);}});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"refreshToken\": \"<<ownerRefreshToken>>\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Logout",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/logout",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Logout\",()=>{pw.expect([204,400,401]).toInclude(pw.response.status);});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"refreshToken\": \"<<ownerRefreshToken>>\"\n}"
+          }
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "name": "02 - Admin / Owner provisioning",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Admin: list all clinics with owner (platform admin)",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Clinics listed\",()=>{pw.expect([200,401,403]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b)&&b[0]&&b[0].clinic){pw.env.set(\"clinicId\",b[0].clinic.id);pw.env.set(\"clinicVersion\",String(b[0].clinic.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: get clinic by id (platform admin)",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics/<<clinicId>>",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Clinic\",()=>{pw.expect([200,401,403,404]).toInclude(pw.response.status);const b=pw.response.body;const c=b&&b.clinic?b.clinic:b;if(c&&c.version!==undefined)pw.env.set(\"clinicVersion\",String(c.version));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: update any clinic (platform admin)",
+          "method": "PUT",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics/<<clinicId>>",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Clinic updated\",()=>{pw.expect([200,400,401,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;const c=b&&b.clinic?b.clinic:b;if(c&&c.version!==undefined)pw.env.set(\"clinicVersion\",String(c.version));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Clinic (admin updated)\",\n  \"address\": \"12 Test Street\",\n  \"areaId\": \"<<areaId>>\",\n  \"timeZone\": \"Africa/Cairo\",\n  \"phones\": [\"+201012345678\"],\n  \"expectedVersion\": <<clinicVersion>>\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: filter clinics by status (platform admin)",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics",
+          "params": [
+            {
+              "key": "status",
+              "value": "<<clinicStatusFilter>>"
+            }
+          ],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Filtered clinics listed\",()=>{pw.expect([200,400,401,403]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b)&&b[0]&&b[0].clinic){pw.env.set(\"clinicId\",b[0].clinic.id);pw.env.set(\"clinicVersion\",String(b[0].clinic.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: get clinic verification history",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics/<<clinicId>>/verification-history",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Verification history\",()=>{pw.expect([200,401,403,404]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b))pw.env.set(\"verificationHistoryCount\",String(b.length));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: transition clinic verification",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/platform-admin/clinics/<<clinicId>>/verification",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Verification transition\",()=>{pw.expect([200,400,401,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.clinic){pw.env.set(\"clinicId\",b.clinic.clinic.id);pw.env.set(\"clinicVersion\",String(b.clinic.clinic.version));}if(b&&Array.isArray(b.history))pw.env.set(\"verificationHistoryCount\",String(b.history.length));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"action\": \"<<verificationAction>>\",\n  \"reason\": \"<<verificationReason>>\",\n  \"expectedVersion\": <<clinicVersion>>\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin: provision owner account",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/admin/owners",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Owner provisioned\",()=>{pw.expect([201,403,409]).toInclude(pw.response.status);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<adminToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<ownerPhone>>\",\n  \"fullName\": \"Provisioned Owner\",\n  \"email\": \"owner@clinic.local\",\n  \"password\": \"<<ownerPassword>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin/Owner: direct provision doctor (full profile, temp password)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/admin/doctors/direct",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Doctor direct provisioned\",()=>{pw.expect([201,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.doctor&&b.doctor.id)pw.env.set(\"doctorId\",b.doctor.id);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<doctorPhone>>\",\n  \"fullName\": \"Provisioned Doctor\",\n  \"email\": \"doctor@clinic.local\",\n  \"password\": \"unused-by-direct-flow\",\n  \"clinicId\": \"<<clinicId>>\",\n  \"professionalTitle\": \"Consultant\",\n  \"bio\": \"Provisioned directly\",\n  \"yearsExperience\": 5,\n  \"syndicateNumber\": \"SYN-001\",\n  \"gender\": \"UNSPECIFIED\",\n  \"specialtyIds\": [\"<<specialtyId>>\"]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Admin/Owner: invite doctor (LIGHTWEIGHT: phone/fullName/email/clinicId)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/admin/doctors/invite",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Doctor invited\",()=>{pw.expect([201,400,403,404,409,429]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.inviteId)pw.env.set(\"claimToken\",\"PASTE_CLAIM_TOKEN_FROM_SECURE_CHANNEL\");});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<doctorPhone>>\",\n  \"fullName\": \"Invited Doctor\",\n  \"email\": \"doctor.invite@clinic.local\",\n  \"clinicId\": \"<<clinicId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Owner: invite doctor for owned clinic (IDOR-checked)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/owners/doctors/invite",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Owner invite\",()=>{pw.expect([201,400,403,404,409,429]).toInclude(pw.response.status);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"phone\": \"<<doctorPhone>>\",\n  \"fullName\": \"Invited Doctor\",\n  \"email\": \"doctor.invite@clinic.local\",\n  \"clinicId\": \"<<clinicId>>\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Doctor: claim onboarding invite (public, profile completed after)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/auth/doctors/claim",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Claimed\",()=>{pw.expect([201,400,401,404,409,410,429]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.tokens&&b.tokens.accessToken){pw.env.set(\"doctorToken\",b.tokens.accessToken);pw.env.set(\"doctorRefreshToken\",b.tokens.refreshToken);} if(b&&b.user&&b.user.id)pw.env.set(\"doctorUserId\",b.user.id);});",
+          "auth": {
+            "authType": "none",
+            "authActive": false
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"token\": \"<<claimToken>>\",\n  \"password\": \"<<doctorNewPassword>>\",\n  \"locale\": \"ar\",\n  \"deviceId\": \"<<deviceId>>\"\n}"
+          }
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "name": "03 - Catalog",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "List areas",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/areas?city=Giza",
+          "params": [
+            {
+              "key": "city",
+              "value": "Giza"
+            }
+          ],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Areas\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(Array.isArray(b)&&b[0])pw.env.set(\"areaId\",b[0].id);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "List specialties",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/specialties",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Specialties\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(Array.isArray(b)&&b[0])pw.env.set(\"specialtyId\",b[0].id);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "name": "04 - Clinics",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Create clinic",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Idempotency-Key",
+              "value": "<<idempotencyKey>>"
+            }
+          ],
+          "preRequestScript": "pw.env.set(\"idempotencyKey\",\"clinic-\"+Date.now());",
+          "testScript": "pw.test(\"Clinic created\",()=>{pw.expect([201,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"clinicId\",b.id);pw.env.set(\"clinicVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Hoppscotch Clinic\",\n  \"address\": \"12 Test Street\",\n  \"areaId\": \"<<areaId>>\",\n  \"timeZone\": \"Africa/Cairo\",\n  \"phones\": [\"+201012345678\"]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "List my clinics",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/me",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"My clinics\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(Array.isArray(b)&&b[0]){pw.env.set(\"clinicId\",b[0].id);pw.env.set(\"clinicVersion\",String(b[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "name": "05 - Doctor profile completion / clinic settings",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Doctor: complete/create my profile (after claim)",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/doctors/me",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Profile created\",()=>{pw.expect([200,201,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"doctorId\",b.id);pw.env.set(\"doctorVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<doctorToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"professionalTitle\": \"Consultant\",\n  \"bio\": \"Completed after claim\",\n  \"yearsExperience\": 4,\n  \"syndicateNumber\": \"SYN-CLAIM-001\",\n  \"gender\": \"UNSPECIFIED\",\n  \"specialtyIds\": [\"<<specialtyId>>\"]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Get my doctor profile",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/doctors/me",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Profile\",()=>{pw.expect([200,404]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"doctorId\",b.id);pw.env.set(\"doctorVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<doctorToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Upsert doctor-clinic settings",
+          "method": "PUT",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorId>>",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Settings saved\",()=>{pw.expect([200,400,403,404]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.version!==undefined)pw.env.set(\"doctorClinicVersion\",String(b.version));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"consultationFee\": 150.00,\n  \"followUpFee\": 75.00,\n  \"followUpValidityDays\": 14,\n  \"instaPayAddress\": \"doctor@instapay\",\n  \"autoConfirm\": true\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Get all doctors in clinic",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Clinic doctors\",()=>{pw.expect(pw.response.status).toBe(200);const b=pw.response.body;if(Array.isArray(b)&&b[0]){if(b[0].id)pw.env.set(\"doctorClinicId\",b[0].id);if(b[0].doctorId)pw.env.set(\"doctorId\",b[0].doctorId);if(b[0].version!==undefined)pw.env.set(\"doctorClinicVersion\",String(b[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        }
+      ]
+    },
+    {
+      "v": 1,
+      "name": "06 - Scheduling",
+      "folders": [],
+      "requests": [
+        {
+          "v": "1",
+          "name": "Scheduling: list shifts",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/shifts",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Shifts listed\",()=>{pw.expect([200,403,404]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b)&&b[0]){pw.env.set(\"shiftId\",b[0].id);pw.env.set(\"shiftVersion\",String(b[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: create Sunday shift",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/shifts",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Shift created or reported conflict\",()=>{pw.expect([201,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"shiftId\",b.id);pw.env.set(\"shiftVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Morning clinic\",\n  \"capacityMode\": \"CALCULATED\",\n  \"averageVisitMinutes\": 15,\n  \"fixedCapacity\": null,\n  \"effectiveFrom\": \"2026-11-11\",\n  \"expectedVersion\": null,\n  \"weeklyRules\": [\n    {\n      \"dayOfWeek\": \"SUNDAY\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"14:00\",\n      \"followUpQuota\": 2,\n      \"breaks\": [\n        { \"startTime\": \"11:00\", \"endTime\": \"11:15\" }\n      ]\n    }\n  ]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: preview capacity",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/previews/capacity",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Capacity previewed\",()=>{pw.expect([200,400,403,404]).toInclude(pw.response.status);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Morning clinic\",\n  \"capacityMode\": \"CALCULATED\",\n  \"averageVisitMinutes\": 15,\n  \"fixedCapacity\": null,\n  \"effectiveFrom\": \"2026-11-11\",\n  \"expectedVersion\": null,\n  \"weeklyRules\": [\n    {\n      \"dayOfWeek\": \"SUNDAY\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"14:00\",\n      \"followUpQuota\": 2,\n      \"breaks\": [\n        { \"startTime\": \"11:00\", \"endTime\": \"11:15\" }\n      ]\n    }\n  ]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: update shift",
+          "method": "PUT",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/shifts/<<shiftId>>",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Shift updated\",()=>{pw.expect([200,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"shiftId\",b.id);pw.env.set(\"shiftVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Morning clinic (updated)\",\n  \"capacityMode\": \"CALCULATED\",\n  \"averageVisitMinutes\": 15,\n  \"fixedCapacity\": null,\n  \"effectiveFrom\": \"2026-11-11\",\n  \"expectedVersion\": <<shiftVersion>>,\n  \"weeklyRules\": [\n    {\n      \"dayOfWeek\": \"SUNDAY\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"14:00\",\n      \"followUpQuota\": 2,\n      \"breaks\": [\n        { \"startTime\": \"11:00\", \"endTime\": \"11:15\" }\n      ]\n    }\n  ]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: preview shift change",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/shifts/<<shiftId>>/previews/change",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Change previewed\",()=>{pw.expect([200,400,403,404,409]).toInclude(pw.response.status);});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"name\": \"Morning clinic (updated)\",\n  \"capacityMode\": \"CALCULATED\",\n  \"averageVisitMinutes\": 20,\n  \"fixedCapacity\": null,\n  \"effectiveFrom\": \"2026-11-11\",\n  \"expectedVersion\": null,\n  \"weeklyRules\": [\n    {\n      \"dayOfWeek\": \"SUNDAY\",\n      \"startTime\": \"09:00\",\n      \"endTime\": \"14:00\",\n      \"followUpQuota\": 2,\n      \"breaks\": [\n        { \"startTime\": \"11:00\", \"endTime\": \"11:15\" }\n      ]\n    }\n  ]\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: activate shift",
+          "method": "PATCH",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/shifts/<<shiftId>>/activation",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Shift activation changed\",()=>{pw.expect([200,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"shiftVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"active\": true,\n  \"expectedVersion\": <<shiftVersion>>\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: list exceptions",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/exceptions",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Exceptions listed\",()=>{pw.expect([200,403,404]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b)&&b[0]){pw.env.set(\"exceptionId\",b[0].id);pw.env.set(\"exceptionVersion\",String(b[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: create day-off exception",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/exceptions",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Exception created\",()=>{pw.expect([201,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.id){pw.env.set(\"exceptionId\",b.id);pw.env.set(\"exceptionVersion\",String(b.version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"shiftId\": null,\n  \"type\": \"DAY_OFF\",\n  \"dateFrom\": \"2026-11-15\",\n  \"dateTo\": \"2026-11-15\",\n  \"startTime\": null,\n  \"endTime\": null,\n  \"reason\": \"Public holiday\"\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: cancel exception",
+          "method": "DELETE",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/exceptions/<<exceptionId>>",
+          "params": [],
+          "headers": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Exception cancelled\",()=>{pw.expect([200,400,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&b.version!==undefined)pw.env.set(\"exceptionVersion\",String(b.version));});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": "{\n  \"expectedVersion\": <<exceptionVersion>>\n}"
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: generate sessions",
+          "method": "POST",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/sessions/generate",
+          "params": [],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Sessions generated\",()=>{pw.expect([200,403,404,409]).toInclude(pw.response.status);const b=pw.response.body;if(b&&Array.isArray(b.sessions)&&b.sessions[0]){pw.env.set(\"sessionId\",b.sessions[0].id);pw.env.set(\"sessionVersion\",String(b.sessions[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        },
+        {
+          "v": "1",
+          "name": "Scheduling: list sessions",
+          "method": "GET",
+          "endpoint": "<<baseUrl>>/api/v1/clinics/<<clinicId>>/doctors/<<doctorClinicId>>/schedule/sessions",
+          "params": [
+            {
+              "key": "from",
+              "value": "<<scheduleFrom>>"
+            },
+            {
+              "key": "to",
+              "value": "<<scheduleTo>>"
+            }
+          ],
+          "headers": [],
+          "preRequestScript": "",
+          "testScript": "pw.test(\"Sessions listed\",()=>{pw.expect([200,400,403,404]).toInclude(pw.response.status);const b=pw.response.body;if(Array.isArray(b)&&b[0]){pw.env.set(\"sessionId\",b[0].id);pw.env.set(\"sessionVersion\",String(b[0].version));}});",
+          "auth": {
+            "authType": "bearer",
+            "token": "<<ownerToken>>",
+            "authActive": true
+          },
+          "body": {
+            "contentType": "application/json",
+            "body": ""
+          }
+        }
+      ]
+    }
+  ],
+  "requests": []
+}

@@ -1,0 +1,121 @@
+DOCTOR PROFILE vs CLINIC INVITE - WHY clinicId IS USED (current codebase behavior)
+Generated: 2026-11-06
+Project: H:\ZAE\clinic-backend
+
+This explains, based on the current implementation, why clinicId appears in doctor onboarding/provisioning,
+why you may send an invite/provision for the same clinic context, and what happens if you want to invite a doctor
+to ANOTHER clinic.
+
+--------------------------------------------------------------------------------
+1) TWO DIFFERENT THINGS (important)
+--------------------------------------------------------------------------------
+A. DOCTOR PROFILE (professional identity) - global per user account
+   - Endpoint: POST /api/v1/doctors/me (and GET/PUT /api/v1/doctors/me)
+   - Request body: professionalTitle, bio, yearsExperience, syndicateNumber, gender, specialtyIds
+   - It does NOT take clinicId.
+   - DoctorProfile domain is stored per userId (one professional profile for the doctor user). It contains no clinicId.
+   - Creating your own profile requires an active DOCTOR membership in ANY clinic (ensureDoctorMembership checks any active DOCTOR role).
+   - After the lightweight invite+claim flow, claim creates the user+DOCTOR membership but NOT the full profile; the doctor
+     completes profile via POST /api/v1/doctors/me.
+
+B. CLINIC MEMBERSHIP / CLINIC-SCOPED DOCTOR ACCESS - per (user, clinic)
+   - StaffMembership is clinic-scoped: (userId, clinicId, role, status, permissions).
+   - A doctor can belong to a clinic only through an active membership for that clinic (role DOCTOR/OWNER etc. as modeled).
+   - clinicId is required whenever the system must know WHICH clinic the doctor is being attached to.
+
+--------------------------------------------------------------------------------
+2) WHY YOU PASS clinicId WHEN PROVISIONING/INVITING A DOCTOR
+--------------------------------------------------------------------------------
+You pass clinicId in admin/owner doctor provisioning and doctor onboarding invite because the operation is not just
+"create a doctor person/profile"; it is "attach this doctor account to a specific clinic".
+
+Current flows:
+
+A) POST /api/v1/admin/doctors/direct (full direct provision)
+   Body includes clinicId PLUS full profile fields.
+   What it does (atomically via ProvisioningApplicationService):
+   1. Validates mandatory clinicId and that clinic exists (ClinicFacade.existsById).
+   2. If actor is OWNER (non-admin owner context), enforces clinic ownership (ClinicFacade.isOwnedBy) - IDOR prevention.
+   3. Validates specialties.
+   4. Creates identity account + DOCTOR StaffMembership for THAT clinicId + creates doctor profile.
+   clinicId is required because the created membership must point to the correct clinic.
+
+B) POST /api/v1/admin/doctors/invite and POST /api/v1/owners/doctors/invite (LIGHTWEIGHT invite)
+   Body is ONLY: {phone, fullName, email?, clinicId}
+   clinicId is required because:
+   1. The system must validate the target clinic exists before creating an invite.
+   2. OWNER actors can only invite for clinics they own (ownership/IDOR check).
+   3. The invite stores clinicId. When the doctor claims POST /api/v1/auth/doctors/claim, the system creates a DOCTOR
+      StaffMembership for invite.clinicId (the clinic that invited them).
+   The invite does NOT carry profile fields; profile is completed later via POST /api/v1/doctors/me.
+
+C) PUT /api/v1/clinics/{clinicId}/doctors/{doctorId}
+   Clinic-scoped settings (fees/follow-up/InstaPay/autoConfirm). clinicId identifies which clinic's settings are being set.
+
+So: "passing clinicId when creating/provisioning/inviting" means "which clinic is this doctor being onboarded into?"
+It is NOT required when the doctor later edits their global profile via POST/PUT /api/v1/doctors/me.
+
+--------------------------------------------------------------------------------
+3) SHOULD YOU SEND INVITE/PROVISION WITH THE SAME clinicId AT THE SAME TIME?
+--------------------------------------------------------------------------------
+Usually NO as two separate actions for the same person+clinic.
+
+- Use ONE onboarding path for a given doctor+clinic onboarding:
+  * Direct provision: /admin/doctors/direct -> creates account+membership+profile now (temp password, must change password).
+  * Lightweight invite: /admin/doctors/invite -> creates invite; doctor claims; doctor completes profile.
+- Do not "invite and also create profile/provision for the same phone+clinic" at the same time. The flows create/expect
+  identity users/memberships/invites with uniqueness and conflict checks:
+  * createDoctorOnboardingInvite locks phone and rejects if an account already exists for that phone (USER_ALREADY_EXISTS).
+  * provisionDoctorAccount/provisionDoctorAccountDirect also reject if account already exists for that phone.
+  * claim rejects if account already exists for that phone.
+  * It also rate-limits invites per phone.
+- If you already direct-provisioned a doctor into a clinic, sending an invite for the same phone will fail because the user
+  already exists. That is expected with the current new-account onboarding design.
+- If you want a second clinic for an EXISTING doctor account, do not use the new-account doctor onboarding invite/claim
+  direct-provision path as currently implemented (they assume/create account by phone). Use the clinic-scoped staff
+  invitation/membership path described below.
+
+--------------------------------------------------------------------------------
+4) WHAT IF I WANT TO INVITE A DOCTOR TO ANOTHER CLINIC?
+--------------------------------------------------------------------------------
+This depends on whether the doctor already has an account/profile.
+
+Case 1 - Doctor does NOT exist yet (new person)
+  - Invite/provision them into the FIRST clinic using /admin/doctors/invite (lightweight) or /admin/doctors/direct.
+  - After they have an account, add them to other clinics using Case 2.
+
+Case 2 - Doctor ALREADY has an account (existing user/phone) and you want them in ANOTHER clinic
+  - The doctor profile (POST/PUT /api/v1/doctors/me) is global per user; they do not create a new profile per clinic.
+  - You need another CLINIC MEMBERSHIP for the other clinic.
+  - Use the general clinic invitation flow:
+      POST /api/v1/clinics/{clinicId}/invitations  (authenticated; actor must have STAFF_MANAGE / appropriate permission)
+      Body: { phone, role: DOCTOR (or as allowed), permissions: [...] }
+      The invitee accepts: POST /api/v1/auth/invitations/accept
+    Current behavior (IdentityApplicationService):
+      - createInvitation rejects if that phone is already an active member of THAT clinic (ALREADY_MEMBER).
+      - acceptInvitation finds existing user by phone; if found and active, it creates a new StaffMembership for the
+        invitation's clinicId (so an existing doctor can join another clinic), subject to membership uniqueness/DB rules.
+  - For an existing doctor who should work in Clinic B in addition to Clinic A, create a Clinic B invitation for role DOCTOR
+    and have them accept it (or use the equivalent authorized membership/admin process if added later).
+  - After membership exists for Clinic B, configure Clinic B-specific settings:
+      PUT /api/v1/clinics/{clinicBId}/doctors/{doctorId}
+
+IMPORTANT current limitation/design note:
+  - POST /api/v1/admin/doctors/invite and /admin/doctors/direct are designed around onboarding by phone and currently reject
+    when the phone/account already exists. They are not the right path for "add existing doctor to another clinic" unless
+    that behavior is explicitly changed.
+  - If product requires "admin invites existing doctor to another clinic" as a first-class simple endpoint, implement it
+    carefully as a clinic-scoped membership addition (or dedicated flow) with: clinic exists check, OWNER ownership/IDOR
+    checks, existing-user lookup, duplicate membership prevention, idempotency, and no password/token leakage.
+
+--------------------------------------------------------------------------------
+5) QUICK SUMMARY
+--------------------------------------------------------------------------------
+- POST /api/v1/doctors/me: NO clinicId. Creates/updates the doctor's global professional profile.
+- /admin/doctors/direct: needs clinicId because it creates DOCTOR membership + profile for that clinic immediately.
+- /admin/doctors/invite (lightweight): needs clinicId because invite/claim attaches the doctor to that clinic; no profile
+  fields in invite, profile completed after claim.
+- Same clinic, same person: pick one onboarding path; do not double-submit conflicting flows.
+- Another clinic for an existing doctor: keep one global doctor profile; add a new clinic membership/invitation for the other
+  clinic and set doctor-clinic settings for that clinic. Do not rely on the new-account direct/invite onboarding endpoints
+  for existing phones.

@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Clinic Backend - Local",
+    "variables": [
+      { "key": "baseUrl", "value": "http://localhost:8083" },
+      { "key": "adminPhone", "value": "+201000000001" },
+      { "key": "adminPassword", "value": "Admin@12345678" },
+      { "key": "ownerPhone", "value": "+201012345678" },
+      { "key": "ownerPassword", "value": "StrongPass12345" },
+      { "key": "doctorPhone", "value": "+201055500010" },
+      { "key": "doctorTempPassword", "value": "" },
+      { "key": "doctorNewPassword", "value": "DoctorPass12345" },
+      { "key": "deviceId", "value": "hoppscotch-device" },
+      { "key": "areaId", "value": "20000000-0000-0000-0000-000000000001" },
+      { "key": "specialtyId", "value": "10000000-0000-0000-0000-000000000001" },
+      { "key": "idempotencyKey", "value": "" },
+      { "key": "adminToken", "value": "" },
+      { "key": "ownerToken", "value": "" },
+      { "key": "doctorToken", "value": "" },
+      { "key": "ownerRefreshToken", "value": "" },
+      { "key": "doctorRefreshToken", "value": "" },
+      { "key": "claimToken", "value": "" },
+      { "key": "doctorUserId", "value": "" },
+      { "key": "clinicId", "value": "" },
+      { "key": "clinicVersion", "value": "0" },
+      { "key": "clinicStatusFilter", "value": "PENDING_VERIFICATION" },
+      { "key": "verificationAction", "value": "APPROVE" },
+      { "key": "verificationReason", "value": "Registration details reviewed." },
+      { "key": "verificationHistoryCount", "value": "0" },
+      { "key": "doctorId", "value": "" },
+      { "key": "doctorVersion", "value": "0" },
+      { "key": "doctorClinicVersion", "value": "0" }
+    ]
+  }
+]

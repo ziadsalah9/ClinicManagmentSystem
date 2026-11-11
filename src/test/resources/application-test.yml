@@ -1,0 +1,9 @@
+security:
+  jwt:
+    secret-base64: ZGV2LW9ubHktc2VjcmV0LWtleS1tdXN0LWJlLW92ZXItMzItYnl0ZXMtbG9uZw==
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        default_schema: public
